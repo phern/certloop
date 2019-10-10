@@ -1,0 +1,61 @@
+#!/bin/bash
+
+
+ssl_loop_from_file () {
+#iterate over each line in given argument file, should work with individual IPs as well
+while read p; do
+	#get certificate data and cut off nonsense
+	certdate=$(echo | openssl s_client -showcerts -servername $p -connect $p:443 2>/dev/null | openssl x509 -inform pem -noout -text | grep 'Not After' | sed 's/Not After : //' | sed 's/[0-9]*:[0-9]*:[0-9]*//' | sed 's/GMT//') 
+	
+	#format date better
+	auth=$(date -d "$certdate")
+	todate=`date`
+	
+	#date math check expiration
+ 	if [[ "$todate" > "$auth" ]] ; then
+    		echo -e "$p $auth \e[91mNOT VALID\e[0m"
+	elif [[ "$todate" < "$auth" ]] ; then
+		echo -e "$p $auth \e[92mVALID\e[0m"
+	else
+		echo -e "$p $auth ?????"
+ 	fi
+
+
+done < $1
+
+}
+
+
+
+ssl_loop_subnet () { #loop over a given IP/subnet combo
+
+for i in `nmap -sL $1 | awk '/Nmap scan report/{print $NF}'`; do 
+	#get certificate data and cut off nonsense (timeout half sec in the case that there is no certificate at all)
+	certdate=$(echo | timeout 0.5 openssl s_client -showcerts -servername $i -connect $i:443 &2>/dev/null | openssl x509 -inform pem -noout -text | grep 'Not After' | sed 's/Not After : //' | sed 's/[0-9]*:[0-9]*:[0-9]*//' | sed 's/GMT//' ) 
+	 
+	if [ $? -eq 0 ]; then #check output of command for succeed or fail
+    		echo OK
+	else
+    		echo FAIL
+		continue
+	fi
+
+	auth=$(date -d "$certdate") #make sure the date format is correct
+	todate=`date`
+
+ 	if [[ "$todate" > "$auth" ]] ; then #calculate date to see if certificate is valid
+    		echo -e "$i $auth \e[91mNOT VALID\e[0m"
+	elif [[ "$todate" < "$auth" ]] ; then
+		echo -e "$i $auth \e[92mVALID\e[0m"
+	else
+		echo -e "$i $auth ?????"
+ 	fi
+ 
+
+done
+
+}
+
+
+#ssl_loop_from_file $1
+ssl_loop_subnet $1
